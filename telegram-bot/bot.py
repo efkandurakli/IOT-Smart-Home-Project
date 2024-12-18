@@ -37,9 +37,17 @@ logger = logging.getLogger(__name__)
 
 # Define a few command handlers. These usually take the two arguments update and
 # context.
+
+async def sendMessage(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.sendMessage(chat_id=context.job.chat_id, text=context.job.data)
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /start is issued."""
     user = update.effective_user
+
+    #call the sendMessage function in every 2 seconds to send a 'sended msg' string
+    context.job_queue.run_repeating(sendMessage, interval=2, chat_id=update.message.chat_id, data='sended msg')
+
     await update.message.reply_html(
         rf"Hi {user.mention_html()}!",
         reply_markup=ForceReply(selective=True),
