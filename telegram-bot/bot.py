@@ -65,7 +65,6 @@ async def get_current_frame_command(update: Update, context: ContextTypes.DEFAUL
 
     try:
         response = requests.get(f" {server_url}/current_frame", stream=True)
-        print("Response")
         response.raise_for_status()
         await update.message.reply_photo(photo=response.raw)
     
