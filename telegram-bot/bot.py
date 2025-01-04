@@ -16,7 +16,7 @@ bot.
 """
 
 import logging
-
+import requests
 from telegram import ForceReply, Update
 from telegram.ext import Application, CommandHandler, ContextTypes, MessageHandler, filters
 from dotenv import load_dotenv
@@ -59,6 +59,23 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     await update.message.reply_text("Help!")
 
 
+async def get_current_frame_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+   
+    server_url = os.getenv("SERVER_URL")
+
+    try:
+        response = requests.get(f" {server_url}/current_frame", stream=True)
+        response.raise_for_status()
+        await update.message.reply_photo(photo=response.raw)
+    
+    except requests.exceptions.RequestException as e:
+        await update.message.reply_text(f"Failed to fetch the current frame: {e}")
+    
+    except Exception as e:
+        await update.message.reply_text(f"An error occurred: {e}")
+        
+
+
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Echo the user message."""
     await update.message.reply_text(update.message.text)
@@ -72,6 +89,7 @@ def main() -> None:
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("get_current_frame", get_current_frame_command))
 
     # on non command i.e message - echo the message on Telegram
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
