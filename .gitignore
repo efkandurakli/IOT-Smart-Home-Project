@@ -169,3 +169,7 @@ cython_debug/
 
 # env
 .env
+
+# images
+
+images
