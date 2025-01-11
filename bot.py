@@ -9,12 +9,15 @@ from dotenv import load_dotenv
 import os
 from face_rec import *
 from io import BytesIO
+import sqlite3
 
 load_dotenv()
 server_url = "http://10.51.9.13:5000"
 bot_token = "7910037233:AAF84g6Ba0eUkfckY_S5FXKqQWhmQwkN7Vo"
 
-active_users = set()
+defined_bots = [{"bot_id": "pi_bot", "isFaceDetecOpen": False, "isSensorInfoOpen": False}]#{"bot_id": "", "isFaceDetecOpen": False, "isSensorInfoOpen": False}
+chatids_to_bot = {"chat_id": {"bot_id": "", "isNotifyFace": False, "isNotifySensor": False}}
+chat_ids = []
 
 known_face_encodings = load_face_encodings("encodings.pkl")
 
@@ -32,7 +35,7 @@ async def send_unexpected_event_notification(context: ContextTypes.DEFAULT_TYPE)
     """Send unexpected event notifications to the specific user."""
     job = context.job  # The job contains metadata about the scheduled task
     chat_id = job.chat_id  # Retrieve the user's chat ID from the job metadata
-
+    
     try:
         response = requests.get(f"{server_url}/current_frame", timeout=5)
         response.raise_for_status()
@@ -40,9 +43,9 @@ async def send_unexpected_event_notification(context: ContextTypes.DEFAULT_TYPE)
         print("Response content-type:", response.headers.get("Content-Type"))
 
         image_bytes = np.frombuffer(response.content, dtype=np.uint8)
-        print("Image bytes:", image_bytes)
+        #print("Image bytes:", image_bytes)
         opencv_image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
-        print("OpenCV image:", opencv_image)
+        #print("OpenCV image:", opencv_image)
 
 
         face_image, num_knowns, num_unknowns = find_number_of_known_and_unknown_faces(opencv_image, known_face_encodings)
@@ -79,15 +82,74 @@ def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
     
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handles the /start command and adds user to the active list."""
-    user_id = update.effective_user.id
-    active_users.add(user_id)
-    #job_removed = remove_job_if_exists(str(user_id), context)
+    #user_id = update.effective_user.id
+    chat_id = update.message.chat_id
+    connection = sqlite3.connect('data.db')
+    cursor = connection.cursor()
+    cursor.execute('SELECT ChatID FROM Chat WHERE ChatID = ?', (str(chat_id),))
+    rows = cursor.fetchone()
+    if rows:
+        cursor.execute('SELECT BotID FROM Chat WHERE ChatID = ?', (str(chat_id),))
+        bot_id = cursor.fetchone()[0]
+        connection.close()
+        print("Bot id: ", bot_id)
+        print(bot_id == None)
+        if bot_id:
+            await update.message.reply_text("You already started to communicate to your bot.")
+        else:
+            await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
 
-    await update.message.reply_text("""You will receive a notification whenever something unexpected happens in the house!
-To start unknown people detector: /startDetectingFaces
-To stop unknown people detector: /stopDetectingFaces
-To start getting sensor info: /startGettingSensorInfo
-To stop getting sensor info: /stopGettingSensorInfo""")
+    else:
+    #job_removed = remove_job_if_exists(str(user_id), context)
+        cursor.execute('INSERT INTO Chat (ChatID, FaceDetection, SensorInfo) VALUES (?, ?, ?)', (str(chat_id), 0, 0))
+        connection.commit()
+        connection.close()
+        #chat_ids.append(str(chat_id))
+        #print("Chat ids: ", chat_ids)
+        await update.message.reply_text("Please give an bot id to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
+        #print("Chat ids to", chat_ids)
+            
+        
+async def connect_to_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    arg = context.args
+    if len(arg) != 1:
+        await update.message.reply_text("Please give a correct number of arg.(1)")
+    else:
+        chat_id = update.message.chat_id
+        connection = sqlite3.connect('data.db')
+        cursor = connection.cursor()
+        cursor.execute('SELECT ChatID FROM Chat WHERE ChatID = ?', (str(chat_id),))
+        rows = cursor.fetchone()
+        print("Rows: ", rows)
+        print("Rows type: ", type(rows))
+
+        if rows:
+            rows = rows[0]
+            new_bot_id = str(arg[0])
+            is_valid = False
+            cursor.execute('SELECT BotID FROM Bot WHERE BotID = ?', (new_bot_id,))
+            defined_bot = cursor.fetchone()[0]
+            print("Defined bot: ", defined_bot)
+            print("Defined bot type", type(defined_bot))
+
+            if defined_bot:
+                is_valid = True
+                cursor.execute('UPDATE Chat SET BotID = ? WHERE ChatID = ?', (new_bot_id, str(chat_id)))
+                connection.commit()
+                connection.close()
+                #chatids_to_bot[chat_id] = {"bot_id": str(new_bot_id), "isNotifyFace": False, "isNotifySensor": False}
+                await update.message.reply_text("""Added to the bots chat list.
+                                                You will receive a notification whenever something unexpected happens in the house!
+                                                To start unknown people detector: /startDetectingFaces
+                                                To stop unknown people detector: /stopDetectingFaces
+                                                To start getting sensor info: /startGettingSensorInfo
+                                                To stop getting sensor info: /stopGettingSensorInfo)""")
+            if not is_valid:
+                await update.message.reply_text("Bot id is not valid.")
+        else:
+            await update.message.reply_text("You can not communicate with this bot.")
+
+
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send a message when the command /help is issued."""
@@ -95,19 +157,20 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def get_current_frame_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-   
-
-    try:
-        response = requests.get(f" {server_url}/current_frame", stream=True)
-        response.raise_for_status()
-        await update.message.reply_photo(photo=response.raw)
-    
-    except requests.exceptions.RequestException as e:
-        await update.message.reply_text(f"Failed to fetch the current frame: {e}")
-    
-    except Exception as e:
-        await update.message.reply_text(f"An error occurred: {e}")
+    chat_id = update.message.chat_id
+    if chat_id in chatids_to_bot.keys():
+        try:
+            response = requests.get(f" {server_url}/current_frame", stream=True)
+            response.raise_for_status()
+            await update.message.reply_photo(photo=response.raw)
         
+        except requests.exceptions.RequestException as e:
+            await update.message.reply_text(f"Failed to fetch the current frame: {e}")
+        
+        except Exception as e:
+            await update.message.reply_text(f"An error occurred: {e}")
+    else:
+        await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
 
 
 async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -117,28 +180,152 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def startDetectingFaces(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     #job_removed = remove_job_if_exists(str(chat_id), context)
-    context.job_queue.run_repeating(send_unexpected_event_notification, interval=2, chat_id=update.message.chat_id, name=f"face_info_{chat_id}")
-    print("Job", context.job_queue.get_jobs_by_name(f"face_info_{chat_id}"))
-    message = "Started detecting faces!" 
+    connection = sqlite3.connect('data.db')
+    cursor = connection.cursor()
+    cursor.execute('SELECT BotID, FaceDetection FROM Chat WHERE ChatID = ?', (str(chat_id),))
+    row = cursor.fetchone()
+    if row:
+        bot_id = row[0]
+        face_detection_chat = row[1]
+        cursor.execute('SELECT FaceDetection FROM Bot WHERE BotID = ?', (bot_id,))
+        face_detection = cursor.fetchone()[0]
+        if face_detection == 1:
+            if face_detection_chat == 0:
+                await update.message.reply_text("Detecting Faces is already opened. To get notifications, /startFaceDetectionNotifications")
+            else:
+                await update.message.reply_text("Detecting faces is already opened.")
+        else:
+            cursor.execute('UPDATE Bot SET FaceDetection = ? WHERE BotID = ?', (1, bot_id))
+            cursor.execute('UPDATE Chat SET FaceDetection = ? WHERE ChatID = ?', (1, str(chat_id)))
+            connection.commit()
+            context.job_queue.run_repeating(send_unexpected_event_notification, interval=2, chat_id=update.message.chat_id, name=f"face_info_{chat_id}")
+            print("Job", context.job_queue.get_jobs_by_name(f"face_info_{chat_id}"))
+            message = "Started detecting faces!"
+            await update.message.reply_text(message)
     #if not job_removed else "Restarted detecting faces!"
-    await update.message.reply_text(message)
+    else:
+        await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
+    connection.close()
+
+async def startFaceDetectionNotifications(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.message.chat_id
+    print("Yes, we have come here!")
+    connection = sqlite3.connect('data.db')
+    cursor = connection.cursor()
+    cursor.execute('SELECT ChatID, BotID, FaceDetection FROM Chat WHERE ChatID = ?', (str(chat_id),))
+    rows = cursor.fetchone()
+    print("Also here")
+    print("Rows", rows)
+    print("Row 2", rows[1])
+    print("Row 3", rows[2])
+    if rows:
+        bot_id = rows[1]
+        print("Bot ID:", bot_id)
+        face_detection_chat = rows[2]
+        print("Also came here")
+        if bot_id:
+            cursor.execute('SELECT FaceDetection FROM Bot WHERE BotID = ?', (bot_id,))
+            face_detection = cursor.fetchone()[0]
+            if face_detection == 1:
+                if face_detection_chat == 0:
+                    context.job_queue.run_repeating(send_unexpected_event_notification, interval=2, chat_id=update.message.chat_id, name=f"face_info_{chat_id}")
+                    cursor.execute('UPDATE Chat SET FaceDetection = ? WHERE ChatID = ?', (1, str(chat_id)))
+                    connection.commit()
+                    await update.message.reply_text("You will get face detection notifications.")
+                else:
+                    await update.message.reply_text("You already get face detection notifications. To stop, /stopFaceDetectionNotifications")
+            else:
+                await update.message.reply_text("You need to start face detection first by /startDetectingFaces")
+        else:
+            await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
+    else:
+        await update.message.reply_text("You need to write /start first to get started with the bot.")
+    connection.close()
+
+async def stopFaceDetectionNotifications(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    chat_id = update.message.chat_id
+    connection = sqlite3.connect('data.db')
+    cursor = connection.cursor()
+    cursor.execute('SELECT ChatID, BotID, FaceDetection FROM Chat WHERE ChatID = ?', (str(chat_id),))
+    rows = cursor.fetchone()
+    if rows:
+        bot_id = rows[1]
+        face_detection_chat = rows[2]
+        if bot_id:
+            cursor.execute('SELECT FaceDetection FROM Bot WHERE BotID = ?', (bot_id,))
+            face_detection = cursor.fetchone()[0]
+            if face_detection == 1:
+                if face_detection_chat == 1:
+                    remove_job_if_exists(f"face_info_{update.message.chat_id}", context)
+                    cursor.execute('UPDATE Chat SET FaceDetection = ? WHERE ChatID = ?', (0, str(chat_id)))
+                    connection.commit()
+                else:
+                    await update.message.reply_text("You already don't get notifications. To get notifications, /startFaceDetectionNotifications")
+            else:
+                await update.message.reply_text("You didn't start face detection, so you don't get any notifications. You need to start face detection first by /startDetectingFaces")
+        else:
+            await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
+    else:
+        await update.message.reply_text("You need to write /start first to get started with the bot.")
+    connection.close()
+        
 
 async def stopDetectingFaces(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Stopping to detect faces")
-    remove_job_if_exists(f"face_info_{update.message.chat_id}", context)
-    await update.message.reply_text("Stopped detecting faces")
+    chat_id = update.message.chat_id
+    connection = sqlite3.connect('data.db')
+    cursor = connection.cursor()
+    cursor.execute('SELECT BotID FROM Chat WHERE ChatID = ?', (str(chat_id),))
+    bot_id = cursor.fetchone()
+    if bot_id:
+        bot_id = bot_id[0]
+        cursor.execute('SELECT FaceDetection FROM Bot WHERE BotID = ?', (bot_id,))
+        face_detection = cursor.fetchone()[0]
+        if face_detection == 1:
+            print("Stopping to detect faces")
+            cursor.execute("SELECT ChatID FROM Chat WHERE BotID = ?", (bot_id,))
+            chats_of_this_bot = cursor.fetchall()
+            for chat in chats_of_this_bot:
+                print("Chat", chat[0])
+                remove_job_if_exists(f"face_info_{chat[0]}", context)
+            #remove_job_if_exists(f"face_info_{update.message.chat_id}", context)
+            cursor.execute('UPDATE Bot SET FaceDetection = ? WHERE BotID = ?', (0, bot_id))
+            cursor.execute('UPDATE Chat SET FaceDetection = ? WHERE BotID = ?', (0, bot_id))
+            connection.commit()
+            await update.message.reply_text("Stopped detecting faces")
+        else:
+            await update.message.reply_text("There is no started face detection.")
+    else:
+        await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
+    connection.close()
 
 async def startGettingSensorInfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
-    context.job_queue.run_repeating(get_sensor_info, interval=2, chat_id=update.message.chat_id, name=f"sensor_info_{chat_id}")
-    print("Job", context.job_queue.get_jobs_by_name(f"sensor_info_{chat_id}"))
-    message = "Started getting sensor info!" 
-    await update.message.reply_text(message)
+    if chat_id in chatids_to_bot.keys():
+        bot_infos = chatids_to_bot[chat_id]
+        if not bot_infos["isSensorInfoOpen"]:
+            context.job_queue.run_repeating(get_sensor_info, interval=2, chat_id=update.message.chat_id, name=f"sensor_info_{chat_id}")
+            print("Job", context.job_queue.get_jobs_by_name(f"sensor_info_{chat_id}"))
+            message = "Started getting sensor info!" 
+            bot_infos["isSensorInfoOpen"] = True
+            await update.message.reply_text(message)
+        else:
+            await update.message.reply_text("Sensor Infos Already opened.")
+    else:
+        await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
 
 async def stopGettingSensorInfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    print("Stopping to get sensor info")
-    remove_job_if_exists(f"sensor_info_{update.message.chat_id}", context)
-    await update.message.reply_text("Stopped getting sensor info")
+    chat_id = update.message.chat_id
+    if chat_id in chatids_to_bot.keys():
+        bot_infos = chatids_to_bot[chat_id]
+        if bot_infos["isSensorInfoOpen"]:
+            print("Stopping to get sensor info")
+            remove_job_if_exists(f"sensor_info_{update.message.chat_id}", context)
+            bot_infos["isSensorInfoOpen"] = False
+            await update.message.reply_text("Stopped getting sensor info")
+        else:
+            await update.message.reply_text("Sensor Infos is not opened.")
+    else:
+        await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
 
 async def get_sensor_info(context: ContextTypes.DEFAULT_TYPE) -> None:
     """Send unexpected event notifications to the specific user."""
@@ -168,12 +355,16 @@ def main() -> None:
 
     # on different commands - answer in Telegram
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("connect_to_bot", connect_to_bot))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("get_current_frame", get_current_frame_command))
     application.add_handler(CommandHandler("startDetectingFaces", startDetectingFaces))
     application.add_handler(CommandHandler("stopDetectingFaces", stopDetectingFaces))
     application.add_handler(CommandHandler("startGettingSensorInfo", startGettingSensorInfo))
     application.add_handler(CommandHandler("stopGettingSensorInfo", stopGettingSensorInfo))
+    application.add_handler(CommandHandler("startFaceDetectionNotifications", startFaceDetectionNotifications))
+    application.add_handler(CommandHandler("stopFaceDetectionNotifications", stopFaceDetectionNotifications))
+
 
 
     # on non command i.e message - echo the message on Telegram
