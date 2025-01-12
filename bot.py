@@ -13,11 +13,8 @@ import sqlite3
 
 load_dotenv()
 
-bot_token = "7910037233:AAF84g6Ba0eUkfckY_S5FXKqQWhmQwkN7Vo"
-
-#defined_bots = [{"bot_id": "pi_bot", "isFaceDetecOpen": False, "isSensorInfoOpen": False}]#{"bot_id": "", "isFaceDetecOpen": False, "isSensorInfoOpen": False}
-#chatids_to_bot = {"chat_id": {"bot_id": "", "isNotifyFace": False, "isNotifySensor": False}}
-#chat_ids = []
+bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+#bot_token = "7910037233:AAF84g6Ba0eUkfckY_S5FXKqQWhmQwkN7Vo"
 
 known_face_encodings = load_face_encodings("encodings.pkl")
 
@@ -50,9 +47,7 @@ async def send_unexpected_event_notification(context: ContextTypes.DEFAULT_TYPE)
             print("Response content-type:", response.headers.get("Content-Type"))
 
             image_bytes = np.frombuffer(response.content, dtype=np.uint8)
-            #print("Image bytes:", image_bytes)
             opencv_image = cv2.imdecode(image_bytes, cv2.IMREAD_COLOR)
-            #print("OpenCV image:", opencv_image)
 
 
             face_image, num_knowns, num_unknowns = find_number_of_known_and_unknown_faces(opencv_image, known_face_encodings)
@@ -67,12 +62,6 @@ async def send_unexpected_event_notification(context: ContextTypes.DEFAULT_TYPE)
                 image_bytes = BytesIO(buffer.tobytes())
                 image_bytes.name = "image.jpg"  # Optional: Telegram likes named files
                 image_dict[i] = image_bytes
-
-                #await context.bot.send_photo(
-                 #   chat_id=chat_id,
-                  #  photo=image_bytes,
-                   # caption=f"{num_unknowns} unknowns detected in your house!"
-                #)
         except requests.exceptions.RequestException as e:
             logger.error(f"Error fetching current frame: {e}")
 
@@ -80,8 +69,8 @@ async def send_unexpected_event_notification(context: ContextTypes.DEFAULT_TYPE)
             logger.error(f"Error fetching current frame: {e}")
         await asyncio.sleep(1)
     if data_dict["unknown_detections"] >= 4 and not known_person:
-        for key, value in image_dict.items():
-            await context.bot.send_photo(chat_id=chat_id, photo=value, caption="Unknown people detected in your house!")
+        #for key, value in image_dict.items():
+        await context.bot.send_photo(chat_id=chat_id, photo=image_bytes, caption="Unknown people detected in your house!")
 
 
 def remove_job_if_exists(name: str, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -148,18 +137,17 @@ async def connect_to_bot(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 cursor.execute('UPDATE Chat SET BotID = ? WHERE ChatID = ?', (new_bot_id, str(chat_id)))
                 connection.commit()
                 connection.close()
-                #chatids_to_bot[chat_id] = {"bot_id": str(new_bot_id), "isNotifyFace": False, "isNotifySensor": False}
                 await update.message.reply_text("Added to the bots chat list.\
                                                 \nThere are multiple use cases for this app! You can use the following commands!\
                                                 \nTo get help: /help\
-                                                \nTo start unknown people detector: /startDetectingFaces\
-                                                \nTo stop unknown people detector: /stopDetectingFaces\
-                                                \nTo start getting sensor info: /startGettingSensorInfo\
-                                                \nTo stop getting sensor info: /stopGettingSensorInfo)\
-                                                \nTo start getting face detection notifications: /startFaceDetectionNotifications\
-                                                \nTo stop getting face detection notifications: /stopFaceDetectionNotifications\
-                                                \nTo start getting sensor info notifications: /startSensorInfoNotifications\
-                                                \nTo stop getting sensor info notifications: /stopSensorInfoNotifications\
+                                                \nTo start unknown people detector: /start_detecting_faces\
+                                                \nTo stop unknown people detector: /stop_detecting_faces\
+                                                \nTo start getting sensor info: /start_getting_sensor_info\
+                                                \nTo stop getting sensor info: /stop_getting_sensor_info\
+                                                \nTo start getting face detection notifications: /start_face_detection_notifs\
+                                                \nTo stop getting face detection notifications: /stop_face_detection_notifs\
+                                                \nTo start getting sensor info notifications: /start_sensor_info_notifs\
+                                                \nTo stop getting sensor info notifications: /stop_sensor_info_notifs\
                                                 \nTo get the current frame of the camera: /get_current_frame\
                                                 ")
             if not is_valid:
@@ -175,14 +163,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
                                     \n/start: To start the bot\
                                     \n/help: To get help\
                                     \n/connect_to_bot [your_bot_id]: To match your bot\
-                                    \n/startDetectingFaces: To start detecting faces\
-                                    \n/stopDetectingFaces: To stop detecting faces\
-                                    \n/startGettingSensorInfo: To start getting sensor info\
-                                    \n/stopGettingSensorInfo: To stop getting sensor info\
-                                    \n/startFaceDetectionNotifications: To start getting face detection notifications\
-                                    \n/stopFaceDetectionNotifications: To stop getting face detection notifications\
-                                    \n/startSensorInfoNotifications: To start getting sensor info notifications\
-                                    \n/stopSensorInfoNotifications: To stop getting sensor info notifications\
+                                    \n/start_detecting_faces: To start detecting faces\
+                                    \n/stop_detecting_faces: To stop detecting faces\
+                                    \n/start_getting_sensor_info: To start getting sensor info\
+                                    \n/stop_getting_sensor_info: To stop getting sensor info\
+                                    \n/start_face_detection_notifs: To start getting face detection notifications\
+                                    \n/stop_face_detection_notifs: To stop getting face detection notifications\
+                                    \n/start_sensor_info_notifs: To start getting sensor info notifications\
+                                    \n/stop_sensor_info_notifs: To stop getting sensor info notifications\
                                     \n/get_current_frame: To get the current frame of the camera\
                                     ")
 
@@ -214,9 +202,8 @@ async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Echo the user message."""
     await update.message.reply_text(update.message.text)
 
-async def startDetectingFaces(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start_detecting_faces(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
-    #job_removed = remove_job_if_exists(str(chat_id), context)
     connection = sqlite3.connect('data.db')
     cursor = connection.cursor()
     cursor.execute('SELECT BotID, FaceDetection FROM Chat WHERE ChatID = ?', (str(chat_id),))
@@ -228,7 +215,7 @@ async def startDetectingFaces(update: Update, context: ContextTypes.DEFAULT_TYPE
         face_detection = cursor.fetchone()[0]
         if face_detection == 1:
             if face_detection_chat == 0:
-                await update.message.reply_text("Detecting Faces is already opened. To get notifications, /startFaceDetectionNotifications")
+                await update.message.reply_text("Detecting Faces is already opened. To get notifications, /start_face_detection_notifs")
             else:
                 await update.message.reply_text("Detecting faces is already opened.")
         else:
@@ -241,12 +228,11 @@ async def startDetectingFaces(update: Update, context: ContextTypes.DEFAULT_TYPE
             print("Job", context.job_queue.get_jobs_by_name(f"face_info_{chat_id}"))
             message = "Started detecting faces!"
             await update.message.reply_text(message)
-    #if not job_removed else "Restarted detecting faces!"
     else:
         await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
     connection.close()
 
-async def startFaceDetectionNotifications(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start_face_detection_notifs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     print("Yes, we have come here!")
     connection = sqlite3.connect('data.db')
@@ -274,16 +260,16 @@ async def startFaceDetectionNotifications(update: Update, context: ContextTypes.
                     connection.commit()
                     await update.message.reply_text("You will get face detection notifications.")
                 else:
-                    await update.message.reply_text("You already get face detection notifications. To stop, /stopFaceDetectionNotifications")
+                    await update.message.reply_text("You already get face detection notifications. To stop, /stop_face_detection_notifs")
             else:
-                await update.message.reply_text("You need to start face detection first by /startDetectingFaces")
+                await update.message.reply_text("You need to start face detection first by /start_detecting_faces")
         else:
             await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
     else:
         await update.message.reply_text("You need to write /start first to get started with the bot.")
     connection.close()
 
-async def stopFaceDetectionNotifications(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def stop_face_detection_notifs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     connection = sqlite3.connect('data.db')
     cursor = connection.cursor()
@@ -300,10 +286,11 @@ async def stopFaceDetectionNotifications(update: Update, context: ContextTypes.D
                     remove_job_if_exists(f"face_info_{update.message.chat_id}", context)
                     cursor.execute('UPDATE Chat SET FaceDetection = ? WHERE ChatID = ?', (0, str(chat_id)))
                     connection.commit()
+                    await update.message.reply_text("Stopped getting face detection notifications")
                 else:
-                    await update.message.reply_text("You already don't get notifications. To get notifications, /startFaceDetectionNotifications")
+                    await update.message.reply_text("You already don't get notifications. To get notifications, /start_face_detection_notifs")
             else:
-                await update.message.reply_text("You didn't start face detection, so you don't get any notifications. You need to start face detection first by /startDetectingFaces")
+                await update.message.reply_text("You didn't start face detection, so you don't get any notifications. You need to start face detection first by /start_detecting_faces")
         else:
             await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
     else:
@@ -311,7 +298,7 @@ async def stopFaceDetectionNotifications(update: Update, context: ContextTypes.D
     connection.close()
         
 
-async def stopDetectingFaces(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def stop_detecting_faces(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     connection = sqlite3.connect('data.db')
     cursor = connection.cursor()
@@ -328,7 +315,6 @@ async def stopDetectingFaces(update: Update, context: ContextTypes.DEFAULT_TYPE)
             for chat in chats_of_this_bot:
                 print("Chat", chat[0])
                 remove_job_if_exists(f"face_info_{chat[0]}", context)
-            #remove_job_if_exists(f"face_info_{update.message.chat_id}", context)
             cursor.execute('UPDATE Bot SET FaceDetection = ? WHERE BotID = ?', (0, bot_id))
             cursor.execute('UPDATE Chat SET FaceDetection = ? WHERE BotID = ?', (0, bot_id))
             connection.commit()
@@ -339,7 +325,7 @@ async def stopDetectingFaces(update: Update, context: ContextTypes.DEFAULT_TYPE)
         await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
     connection.close()
 
-async def startGettingSensorInfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start_getting_sensor_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     connection = sqlite3.connect('data.db')
     cursor = connection.cursor()
@@ -352,9 +338,9 @@ async def startGettingSensorInfo(update: Update, context: ContextTypes.DEFAULT_T
         sensor_info = cursor.fetchone()[0]
         if sensor_info == 1:
             if sensor_info_chat == 0:
-                await update.message.reply_text("Getting Sensor Infos is already opened. To get notifications, /startSensorInfoNotifications")
+                await update.message.reply_text("Getting Sensor Infos is already opened. To get notifications, /start_sensor_info_notifs")
             else:
-                await update.message.reply_text("You already get sensor info notifications. To stop, /stopSensorInfoNotifications")
+                await update.message.reply_text("You already get sensor info notifications. To stop, /stop_sensor_info_notifs")
         else:
             cursor.execute('UPDATE Bot SET SensorInfo = ? WHERE BotID = ?', (1, bot_id))
             cursor.execute('UPDATE Chat SET SensorInfo = ? WHERE ChatID = ?', (1, str(chat_id)))
@@ -370,7 +356,7 @@ async def startGettingSensorInfo(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
     connection.close()
 
-async def startSensorInfoNotifications(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def start_sensor_info_notifs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     connection = sqlite3.connect('data.db')
     cursor = connection.cursor()
@@ -391,14 +377,14 @@ async def startSensorInfoNotifications(update: Update, context: ContextTypes.DEF
                     connection.commit()
                     await update.message.reply_text("You will get sensor info notifications.")
                 else:
-                    await update.message.reply_text("You already get sensor info notifications. To stop, /stopSensorInfoNotifications")
+                    await update.message.reply_text("You already get sensor info notifications. To stop, /stop_sensor_info_notifs")
             else:
-                await update.message.reply_text("You need to start getting sensor info first by /startGettingSensorInfo")
+                await update.message.reply_text("You need to start getting sensor info first by /start_getting_sensor_info")
         else:
             await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
     connection.close()
 
-async def stopSensorInfoNotifications(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def stop_sensor_info_notifs(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     connection = sqlite3.connect('data.db')
     cursor = connection.cursor()
@@ -415,16 +401,16 @@ async def stopSensorInfoNotifications(update: Update, context: ContextTypes.DEFA
                     remove_job_if_exists(f"sensor_info_{update.message.chat_id}", context)
                     cursor.execute('UPDATE Chat SET SensorInfo = ? WHERE ChatID = ?', (0, str(chat_id)))
                     connection.commit()
-                    await update.message.reply_text("Stopped getting sensor info")
+                    await update.message.reply_text("Stopped getting sensor info notifications.")
                 else:
-                    await update.message.reply_text("You already don't get notifications. To get notifications, /startSensorInfoNotifications")
+                    await update.message.reply_text("You already don't get notifications. To get notifications, /start_sensor_info_notifs")
             else:
-                await update.message.reply_text("You didn't start getting sensor info, so you don't get any notifications. You need to start getting sensor info first by /startGettingSensorInfo")
+                await update.message.reply_text("You didn't start getting sensor info, so you don't get any notifications. You need to start getting sensor info first by /start_getting_sensor_info")
         else:
             await update.message.reply_text("You need to match your bot. To do this, \ntype /connect_to_bot your_bot_id")
     connection.close()
 
-async def stopGettingSensorInfo(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def stop_getting_sensor_info(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     chat_id = update.message.chat_id
     connection = sqlite3.connect('data.db')
     cursor = connection.cursor()
@@ -460,13 +446,12 @@ async def get_sensor_info(context: ContextTypes.DEFAULT_TYPE) -> None:
         response.raise_for_status()
         response = response.json()
         warning_message = ""
-        if response["CO"] == int(1):
-            warning_message += "CO level is high. "
         if response["Flamable"] == int(1):
-            warning_message += "Flamable gas detected. "
+            warning_message += "Flammable gas detected. "
         if response["Flame"] == int(1):
             warning_message += "Fire detected."
         if warning_message != "":
+            requests.get(f"http://{bot_ip}/set_alarm")
             await context.bot.send_message(chat_id=chat_id, text=warning_message)
     except:
         print("Failed to get sensor info")
@@ -482,14 +467,14 @@ def main() -> None:
     application.add_handler(CommandHandler("connect_to_bot", connect_to_bot))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("get_current_frame", get_current_frame_command))
-    application.add_handler(CommandHandler("startDetectingFaces", startDetectingFaces))
-    application.add_handler(CommandHandler("stopDetectingFaces", stopDetectingFaces))
-    application.add_handler(CommandHandler("startGettingSensorInfo", startGettingSensorInfo))
-    application.add_handler(CommandHandler("stopGettingSensorInfo", stopGettingSensorInfo))
-    application.add_handler(CommandHandler("startFaceDetectionNotifications", startFaceDetectionNotifications))
-    application.add_handler(CommandHandler("stopFaceDetectionNotifications", stopFaceDetectionNotifications))
-    application.add_handler(CommandHandler("startSensorInfoNotifications", startSensorInfoNotifications))
-    application.add_handler(CommandHandler("stopSensorInfoNotifications", stopSensorInfoNotifications))
+    application.add_handler(CommandHandler("start_detecting_faces", start_detecting_faces))
+    application.add_handler(CommandHandler("stop_detecting_faces", stop_detecting_faces))
+    application.add_handler(CommandHandler("start_getting_sensor_info", start_getting_sensor_info))
+    application.add_handler(CommandHandler("stop_getting_sensor_info", stop_getting_sensor_info))
+    application.add_handler(CommandHandler("start_face_detection_notifs", start_face_detection_notifs))
+    application.add_handler(CommandHandler("stop_face_detection_notifs", stop_face_detection_notifs))
+    application.add_handler(CommandHandler("start_sensor_info_notifs", start_sensor_info_notifs))
+    application.add_handler(CommandHandler("stop_sensor_info_notifs", stop_sensor_info_notifs))
 
 
     # on non command i.e message - echo the message on Telegram
