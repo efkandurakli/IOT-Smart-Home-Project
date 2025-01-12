@@ -14,7 +14,6 @@ import sqlite3
 load_dotenv()
 
 bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
-#bot_token = "7910037233:AAF84g6Ba0eUkfckY_S5FXKqQWhmQwkN7Vo"
 
 known_face_encodings = load_face_encodings("encodings.pkl")
 
